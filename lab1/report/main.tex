@@ -1,0 +1,213 @@
+\documentclass{article}
+\usepackage[ruled, linesnumbered]{algorithm2e}
+\def\showtopic{Finite Difference Method}
+\def\showtitle{Lab 1: Wide Stencil Method \\ Solving Viscosity Solution for Monge--Amp\`ere Equation}
+\def\showabs{Lab 1}
+\def\showauthor{Ting Lin, 1700010644}
+\def\showchead{LIN}
+\input{preamble.tex}
+\DeclareMathOperator{\size}{size}
+\DeclareMathOperator{\maxd}{\max\nolimits^\delta}
+\DeclareMathOperator{\mind}{\min\nolimits^\delta}
+\DeclareMathOperator{\MA}{MA}
+\DeclareMathOperator{\MAJ}{MAJ}
+\newcommand{\bV}{\mathbb V}
+\begin{document}
+	\maketitle
+	\thispagestyle{fancy}
+	\tableofcontents
+	
+	\section*{}
+
+\section{Problem Setting and Finite Difference}
+\subsection{Monge--Amp\`ere Equation}
+We solve the following Monge--Amp\`ere Equation in 2D. 
+\begin{align}
+\det(D^2u) = f & \IN \Omega\\ 
+u|_{\partial \Omega} = g & \ON \partial \Omega
+\end{align}
+with some convexity assumption ($f>0$). Here and throughout this report we assume that $\Omega = [0,1]^2$. We can prove the existence and uniqueness of viscosity solution under certain condition. In this lab we focus on wide stencil method to solve the viscosity solution. Notice that 
+$$\det(D^2 u) = \min_{\{v_1, v_2\} \in \mathbb V} (v_1^TD^2uv_1)(v_2^TD^2uv_2) = \min_{\{v_1, v_2\} \in \mathbb V} (\frac{\partial^2 u}{\partial v_1^2})(\frac{\partial^2 u}{\partial v_2^2})$$
+where $\mathbb V$ is the set of all othronormal bases. To enforce the convexity, we introduce 
+$$\MA = \min_{\{v_1, v_2\} \in \mathbb V} (\frac{\partial^2 u}{\partial v_1^2})^+(\frac{\partial^2 u}{\partial v_2^2})^+$$
+where $a^+ = \max(a,0)$ is the positive part. 
+
+\subsection{Wide Stencil Method}
+For WS method, we suppose there is a grid with size $h = 1/N$, and we consider the function value only on the interior grid point. Introduce the discrete MA function need to both approximate $\bV$ and the second order directional derivative. For the former, we consider using the direction whose vector lies exactly on some stencil, for example $([1,0], [0,1])$. The typical and most simplest choices are 9-point basis
+$$\bV_9 = \{\{[1,0],[0,1]\},\{[1,1],[-1,1]\}\};$$ 
+17-point basis 
+$$\bV_{17} = \{\{[1,0],[0,1]\},\{[1,1],[-1,1]\}, \{[2,1],[-1,2]\}, \{[1,2],[-2,1]\}\};$$
+and 33-point basis
+$$\bV_{33} = \bV_{17}~ \cup ~\{ \{[3,1],[-1,3]\}, \{[1,3],[-3,1]\}, \{[3,2],[-2,3]\}, \{[2,3],[-3,2]\}\};$$
+
+For the former we use standard techniques in Poisson equation: Fix an interior point $x_h$ and for some direction $e$, denote $\tilde \rho$ being the maximum positive real number such that $x_h + \tilde rho e$ is in $\Omega$. Then we set $\rho = \min(\tilde \rho, 1)$. 
+
+For $e^+, e^- = \pm e$, we use the following difference 
+$$\Delta_e u_h(x) = \frac{2}{(\rho^+ + \rho^-) |e|^2 h^2} \left[ \frac{u_h(x_h+\rho^+he^+) - u_h(x_h)}{\rho^+} + \frac{u_h(x_h+\rho^-he^-) - u_h(x_h)}{\rho^-}\right]$$
+to approximate the second order derivatives, which only use the value of interior grid point and boundary condition. The implementation of directional difference and central difference is in \textbf{dir\_diff.m} and \textbf{central\_diff.m}.
+
+Combing both, we obtain the discrete functional
+$$MA_h[u_h](x_h) = \min_{\{v_1, v_2\} \in \mathbb V_h}(\Delta_{v_1}u_h(x_h))^+(\Delta_{v_2}u_h(x_h))^+.$$
+The WS method is consider the following problem 
+$$MA_h[u_h](x_h) = f(x_h)$$ in all interior grid point,  and
+ the following result guarantees the convergence.
+\tbc
+\section{Implementation Detail}
+The equation $MA_h[u_h](x_h) = f(x_h)$ is a nonlinear equation and we will use damped newton method to solve it. Since $a^+$, $\min(a,b)$ is not smooth, which will hamper the behavior of Newton-type method, we use $a^{+,\delta}:= max^{\delta}(a,0)$ and $\min^{\delta}(a,b)$ to replace the original $\max$ and $\min$. Here $$\maxd(x,y) = \frac{1}{2}(x+y+\sqrt{(x-y)^2+\delta}) \qquad \mind(x,y) = \frac{1}{2}(x+y-\sqrt{(x-y)^2+\delta}) $$
+\subsection{Computations of mollified MA function and Jacobian}
+The mollified $$MA_h^{\delta}[u_h](x_h) = \mind_{\{v_1, v_2\} \in \mathbb V_h}(\Delta_{v_1}u_h(x_h))^{+,\delta}(\Delta_{v_2}u_h(x_h))^{+,\delta}.$$ is used in computation, and we choose 1e-6 in our implementation. Notice that here $\min_{\delta}$ is not associative, therefore the order of elements in $\bV_h$ should be fixed. We list the algorithm below, and the implementation is in \textbf{MAFunction.m}.
+\begin{algorithm}[H]
+	\caption{$y_h = \MA_h^{\delta}[u_h](x_h)$}
+	\begin{algorithmic}[1]
+		\FOR{$i=1:|\bV_h|$}
+		\STATE $v_1, v_2 = (\bV_h)_i$
+		\STATE $A = \Delta_{v_1}u_h(x_h), B = \Delta_{v_2}u_h(x_h)$
+		\STATE $MA[i] = \maxd(A,0)*\maxd(B,0)$
+		\ENDFOR
+		\STATE $y_h = \mind(MA[1], MA[2])$
+		\FOR{$i=3:|\bV_h|$}
+		\STATE $y_h = \mind(y_h, MA[i])$
+		\ENDFOR
+		\STATE \Return $y_h$
+	\end{algorithmic}
+\end{algorithm}
+
+For simplicity of Newton Direction, we will not construct the Jacobian directly since it is too ugly. Instead, we only gives the function handle computing the directional derivatives and use Krylov Subspace Method to find the Newton direction. In practice we use the Arnoldi procedure in GMRES to construct Jacobian. The Jacobian is implemented in \textbf{MAJacobi.m}, based on the affine property of $\Delta_e$ and the chain rule, we use $\Delta^0_e$ denote the central difference of $u_h$ under zero boundary condition.
+
+\begin{algorithm}[H]
+	\caption{$q_h = \MAJ_h^{\delta}[u_h](x_h; \phi_h)$}
+	\begin{algorithmic}[1]
+		\FOR{$i=1:|\bV_h|$}
+		\STATE $v_1, v_2 = (\bV_h)_i$
+		\STATE $A = \Delta_{v_1}u_h(x_h), B = \Delta_{v_2}u_h(x_h)$
+		\STATE $GA = \Delta_{v_1}u_h(\phi_h), GB = \Delta_{v_2}u_h(\phi_h)$
+		\STATE $MA[i] = \maxd(A,0)*\maxd(B,0)$
+		\STATE $MAJ[i] =\maxd'(A,0)*\maxd(B,0)*GA \maxd(A,0)*\maxd'(B,0)*GB$
+		\ENDFOR
+		\STATE $y_h = \mind(MA[1], MA[2])$
+		\STATE $q_h = \mind'(MA[1],MA[2])*MAJ[1] + \mind'(MA[2],MA[1])*MAJ[2]$
+		\FOR{$i=3:|\bV_h|$}
+		\STATE $q_h = \mind'(y_h, MA[i])*q_h + \mind'(MA[i],y_h)*MAJ[i]$
+		\STATE $y_h = \mind(y_h, MA[i])$
+		\ENDFOR
+		\STATE \Return $y_h$
+	\end{algorithmic}
+\end{algorithm}
+\subsection{Damped Newton Method}
+After getting the Newton direction $d_h$, we use damped newton method to solve the nonlinear equation. The algorithm is listed below and implemented in \textbf{WideStencil.m}.
+
+\begin{algorithm}[H]
+	\caption{Wide Stencil Method}
+	\begin{algorithmic}[1]
+		\STATE Choose an initial guess $u_h = u_h^0$, $r_h = \|\MA_h^{\delta}(u_h) - f_h\|_F$
+		\WHILE{$r_h < tol$}
+		\STATE Compute the Newton direction $d_h$.
+		\STATE Renormalization $d_h = d_h/(1+\|d_h\|_F)$
+		\STATE $\lambda = 1, \sigma = 0.6$
+		\FOR{$i = 1:MAXIT$}
+		\STATE $v_h = u_h + \lambda d_h$
+		\STATE $q_h = \|\MA_h^{\delta}(v_h) - f_h\|_F$
+		\IF{$q_h<r_h$}
+		\STATE \textbf{break}
+		\ENDIF
+		\STATE $\lambda = \lambda\sigma$
+		\ENDFOR
+		\IF{$i=MAXIT$}
+		\STATE $\lambda = 1, \sigma = 0.6, d_h = -d_h$
+		\FOR{$i = 1:MAXIT$}
+		\STATE $v_h = u_h + \lambda d_h$
+		\STATE $q_h = \|\MA_h^{\delta}(v_h) - f_h\|_F$
+		\IF{$q_h<r_h$}
+		\STATE \textbf{break}
+		\ENDIF
+		\STATE $\lambda = \lambda\sigma$
+		\ENDFOR
+		\ENDIF
+		\STATE $u_h = v_h$
+		\STATE $r_h = q_h$
+		\ENDWHILE
+	\end{algorithmic}
+\end{algorithm}
+The tolerance is chosen as $\epsilon(1+\|f_h\|_F)$, and $\epsilon$ is chosen as 1e-5 or 1e-6.
+\subsection{Avoid Singularity}
+We proposed two methods to avoid possible singularity raised in Newton method. 
+
+The first is first used a sufficient large $\delta$ (1 or 10 for example), and solve the MA equation with $\delta_i = \delta/10^{i}$ consequently. When $\delta_i = 1e-6$ is out ultimate goal ,, we have a sufficiently good initial point and newton method will proceed without singularity.
+
+The second is to find a proper initial value directly, by taking the boundary condition into consideration. We solve the following Poisson equation 
+\begin{align}
+\Delta u = 2\sqrt{f} & \IN \Omega \\
+u = g & \ON \partial \Omega 
+\end{align}
+and obtain the initial guess $u_h^0$. 
+
+In practice, both strategies works well and reduction much work. And the Poisson initialization is 2-3 times efficient than graded $\delta$ method. So we provide the solver in \textbf{solver.m} by poisson initialization method.
+\section{Numerical Results and Discussions}
+We first solving Question 1 without grading delta.
+% Please add the following required packages to your document preamble:
+% \usepackage[table,xcdraw]{xcolor}
+% If you use beamer only pass "xcolor=table" option, i.e. \documentclass[xcolor=table]{beamer}
+\begin{table}[H]
+	\centering
+	\caption{Numerical Result of Question 1}
+	\begin{tabular}{|l|l|l|l|l|l|l|l|l|}
+		\hline
+		{\color[HTML]{000000} Size}  & \multicolumn{2}{l|}{{\color[HTML]{000000} 10}}                & \multicolumn{2}{l|}{{\color[HTML]{000000} 20}}                & \multicolumn{2}{l|}{{\color[HTML]{000000} 40}}                & \multicolumn{2}{l|}{{\color[HTML]{000000} 80}}                 \\ \hline
+		{\color[HTML]{000000} Basis} & {\color[HTML]{000000} Time} & {\color[HTML]{000000} Error}    & {\color[HTML]{000000} Time} & {\color[HTML]{000000} Error}    & {\color[HTML]{000000} Time} & {\color[HTML]{000000} Error}    & {\color[HTML]{000000} Time}  & {\color[HTML]{000000} Error}    \\ \hline
+		{\color[HTML]{000000} 9}     & {\color[HTML]{000000} 0.32} & {\color[HTML]{000000} 2.81E-03} & {\color[HTML]{000000} 0.47} & {\color[HTML]{000000} 1.86E-03} & {\color[HTML]{000000} 1.15} & {\color[HTML]{000000} 1.65E-03} & {\color[HTML]{000000} 11.97} & {\color[HTML]{000000} 1.60E-03} \\ \hline
+		{\color[HTML]{000000} 17}    & {\color[HTML]{000000} 0.63} & {\color[HTML]{000000} 1.34E-03} & {\color[HTML]{000000} 0.79} & {\color[HTML]{000000} 8.89E-04} & {\color[HTML]{000000} 1.86} & {\color[HTML]{000000} 5.68E-04} & {\color[HTML]{000000} 14.93} & {\color[HTML]{000000} 4.72E-04} \\ \hline
+		{\color[HTML]{000000} 33}    & {\color[HTML]{000000} 1.25} & {\color[HTML]{000000} 4.63E-03} & {\color[HTML]{000000} 1.85} & {\color[HTML]{000000} 7.56E-04} & {\color[HTML]{000000} 4.81} & {\color[HTML]{000000} 3.61E-04} & {\color[HTML]{000000} 31.75} & {\color[HTML]{000000} 2.12E-04} \\ \hline
+	\end{tabular}
+\end{table}
+
+% Please add the following required packages to your document preamble:
+% \usepackage[table,xcdraw]{xcolor}
+% If you use beamer only pass "xcolor=table" option, i.e. \documentclass[xcolor=table]{beamer}
+We solve Question 2 from $\delta = 10$ and utilize graded delta strategy.
+\begin{table}[H]
+		\centering
+	\caption{Numerical Result of Question 2}
+	\begin{tabular}{|l|l|l|l|l|l|l|l|l|}
+		\hline
+		{\color[HTML]{000000} Size}  & \multicolumn{2}{l|}{{\color[HTML]{000000} 10}}                & \multicolumn{2}{l|}{{\color[HTML]{000000} 20}}                & \multicolumn{2}{l|}{{\color[HTML]{000000} 40}}                 & \multicolumn{2}{l|}{{\color[HTML]{000000} 80}}                  \\ \hline
+		{\color[HTML]{000000} Basis} & {\color[HTML]{000000} Time} & {\color[HTML]{000000} Error}    & {\color[HTML]{000000} Time} & {\color[HTML]{000000} Error}    & {\color[HTML]{000000} Time}  & {\color[HTML]{000000} Error}    & {\color[HTML]{000000} Time}   & {\color[HTML]{000000} Error}    \\ \hline
+		{\color[HTML]{000000} 9}     & {\color[HTML]{000000} 1.11} & {\color[HTML]{000000} 3.50E-03} & {\color[HTML]{000000} 2.23} & {\color[HTML]{000000} 2.13E-03} & {\color[HTML]{000000} 6.46}  & {\color[HTML]{000000} 1.99E-03} & {\color[HTML]{000000} 48.28}  & {\color[HTML]{000000} 1.96E-03} \\ \hline
+		{\color[HTML]{000000} 17}    & {\color[HTML]{000000} 1.99} & {\color[HTML]{000000} 2.50E-03} & {\color[HTML]{000000} 5.19} & {\color[HTML]{000000} 9.00E-04} & {\color[HTML]{000000} 12.77} & {\color[HTML]{000000} 5.88E-04} & {\color[HTML]{000000} 89.53}  & {\color[HTML]{000000} 5.07E-04} \\ \hline
+		{\color[HTML]{000000} 33}    & {\color[HTML]{000000} 3.98} & {\color[HTML]{000000} 2.70E-03} & {\color[HTML]{000000} 9.36} & {\color[HTML]{000000} 4.78E-04} & {\color[HTML]{000000} 25.61} & {\color[HTML]{000000} 6.85E-04} & {\color[HTML]{000000} 111.89} & {\color[HTML]{000000} 8.38E-04} \\ \hline
+	\end{tabular}
+\end{table}
+
+We solve Question 3 from $\delta = 10$ and utilize graded delta strategy. Additional work is needed for size = 80, we start from $\delta = 100$ in that column.
+% Please add the following required packages to your document preamble:
+% \usepackage[table,xcdraw]{xcolor}
+% If you use beamer only pass "xcolor=table" option, i.e. \documentclass[xcolor=table]{beamer}
+\begin{table}[H]
+			\centering
+	\caption{Numerical Result of Question 3}
+	\begin{tabular}{|l|l|l|l|l|l|l|l|l|}
+		\hline
+		{\color[HTML]{000000} Size}  & \multicolumn{2}{l|}{{\color[HTML]{000000} 10}}                & \multicolumn{2}{l|}{{\color[HTML]{000000} 20}}                & \multicolumn{2}{l|}{{\color[HTML]{000000} 40}}                 & \multicolumn{2}{l|}{{\color[HTML]{000000} 80}}                  \\ \hline
+		{\color[HTML]{000000} Basis} & {\color[HTML]{000000} Time} & {\color[HTML]{000000} Error}    & {\color[HTML]{000000} Time} & {\color[HTML]{000000} Error}    & {\color[HTML]{000000} Time}  & {\color[HTML]{000000} Error}    & {\color[HTML]{000000} Time}   & {\color[HTML]{000000} Error}    \\ \hline
+		{\color[HTML]{000000} 9}     & {\color[HTML]{000000} 0.99} & {\color[HTML]{000000} 8.97E-03} & {\color[HTML]{000000} 2.76} & {\color[HTML]{000000} 3.19E-03} & {\color[HTML]{000000} 6.49}  & {\color[HTML]{000000} 1.13E-03} & {\color[HTML]{000000} 104.59} & {\color[HTML]{000000} 8.47E-04} \\ \hline
+		{\color[HTML]{000000} 17}    & {\color[HTML]{000000} 1.92} & {\color[HTML]{000000} 4.10E-03} & {\color[HTML]{000000} 4.92} & {\color[HTML]{000000} 3.19E-03} & {\color[HTML]{000000} 13.75} & {\color[HTML]{000000} 1.13E-03} & {\color[HTML]{000000} 129.56} & {\color[HTML]{000000} 4.00E-04} \\ \hline
+		{\color[HTML]{000000} 33}    & {\color[HTML]{000000} 4.31} & {\color[HTML]{000000} 3.92E-03} & {\color[HTML]{000000} 8.67} & {\color[HTML]{000000} 1.28E-03} & {\color[HTML]{000000} 29.68} & {\color[HTML]{000000} 1.05E-03} & {\color[HTML]{000000} 224.39} & {\color[HTML]{000000} 4.00E-04} \\ \hline
+	\end{tabular}
+\end{table}
+\end{document}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Escape special TeX symbols (%, &, _, #, $)
